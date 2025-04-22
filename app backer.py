@@ -548,6 +548,19 @@ Let's start by exploring:
     # Return updated welcome message in the new format
     return [{"role": "assistant", "content": custom_welcome}]
 
+# Add this new function to handle the quick prompts
+def handle_quick_prompt(prompt, history):
+    """Process a pre-filled prompt for skill mapping"""
+    return skill_mapping_chat(prompt, history)
+
+# Add the create_quick_prompt function
+def create_quick_prompt(prompt_text):
+    """Create a function to handle a specific quick prompt"""
+    def handle_specific_prompt(history):
+        """Handle a specific pre-filled prompt for skill mapping"""
+        return skill_mapping_chat(prompt_text, history)
+    return handle_specific_prompt
+
 # Initialize welcome messages for each module
 WELCOME_MESSAGES = {
     "skill_mapping": [
@@ -615,6 +628,16 @@ def build_ui():
                             )
                             skill_clear = gr.Button("Clear", scale=1)
                         
+                        # Add quick prompt buttons
+                        gr.Markdown("### Quick Prompts")
+                        with gr.Row():
+                            main_job_titles_btn = gr.Button("🔍 Find Jobs For My Skills")
+                            main_skill_demand_btn = gr.Button("📊 Check Market Demand")
+                        
+                        with gr.Row():
+                            main_skill_improve_btn = gr.Button("🚀 How To Improve My Skills")
+                            main_remote_work_btn = gr.Button("🏠 Find Remote Work Options")
+                        
                         review_skills_btn = gr.Button("Review My Skills", visible=False)
                     
                     # Skill visualization area (initially hidden)
@@ -627,6 +650,17 @@ def build_ui():
                             visible=False
                         )
                         skill_selection_error = gr.Markdown("", visible=False)
+                        
+                        # Add skill analysis quick prompts buttons
+                        gr.Markdown("### Skill Analysis")
+                        with gr.Row():
+                            vis_job_titles_btn = gr.Button("🔍 Find Job Titles For My Skills")
+                            vis_market_demand_btn = gr.Button("📊 Check Market Demand")
+                        
+                        with gr.Row():
+                            vis_skill_improve_btn = gr.Button("🚀 How To Improve My Skills")
+                            vis_remote_jobs_btn = gr.Button("🏠 Find Remote Work With My Skills")
+                        
                         select_skills_btn = gr.Button("Find Jobs Based on These Skills")
                         
                         gr.Markdown("### Suggested Job Titles") 
@@ -643,6 +677,31 @@ def build_ui():
                     lambda: "", None, skill_msg)
                 
                 skill_clear.click(lambda: WELCOME_MESSAGES["skill_mapping"], None, skill_chat)
+                
+                # Quick prompt button handlers in main chat area
+                main_job_titles_btn.click(
+                    create_quick_prompt("Based on the skills we've identified, what job titles should I look for? Please suggest specific roles that would be a good match for my abilities."), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
+                )
+
+                main_skill_demand_btn.click(
+                    create_quick_prompt("Which of my identified skills are most in-demand in today's job market? Are there any that employers particularly value right now?"), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
+                )
+
+                main_skill_improve_btn.click(
+                    create_quick_prompt("What are some practical ways I could improve my existing skills? Are there free or low-cost resources you recommend?"), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
+                )
+
+                main_remote_work_btn.click(
+                    create_quick_prompt("With my current skills, what remote work opportunities might be available to me? I'm interested in flexible work options."), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
+                )
                 
                 review_skills_btn.click(
                     fn=lambda: gr.update(visible=True),
@@ -669,6 +728,31 @@ def build_ui():
                     lambda: gr.Tabs(selected=1),
                     inputs=None,
                     outputs=tabs
+                )
+                
+                # Quick prompt button handlers in skill analysis area
+                vis_job_titles_btn.click(
+                    create_quick_prompt(f"Based on my skills {', '.join(user_skills[:3] if user_skills else [''])}, what job titles should I consider? Please suggest roles that match these abilities, including entry-level positions."), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
+                )
+
+                vis_market_demand_btn.click(
+                    create_quick_prompt(f"How in-demand are my skills {', '.join(user_skills[:3] if user_skills else [''])} in today's job market? Which ones are most valuable to employers right now?"), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
+                )
+
+                vis_skill_improve_btn.click(
+                    create_quick_prompt(f"What are some practical ways I could improve or build upon my existing skills {', '.join(user_skills[:3] if user_skills else [''])}? Are there free or low-cost resources you recommend?"), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
+                )
+
+                vis_remote_jobs_btn.click(
+                    create_quick_prompt(f"What remote work opportunities match my skills {', '.join(user_skills[:3] if user_skills else [''])}? I'm interested in flexible work options."), 
+                    inputs=skill_chat, 
+                    outputs=[skill_chat, review_skills_btn]
                 )
             
             # Job Matching Tab
