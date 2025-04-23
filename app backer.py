@@ -628,17 +628,7 @@ def build_ui():
                             )
                             skill_clear = gr.Button("Clear", scale=1)
                         
-                        # Add quick prompt buttons
-                        gr.Markdown("### Quick Prompts")
-                        with gr.Row():
-                            main_job_titles_btn = gr.Button("🔍 Find Jobs For My Skills")
-                            main_skill_demand_btn = gr.Button("📊 Check Market Demand")
-                        
-                        with gr.Row():
-                            main_skill_improve_btn = gr.Button("🚀 How To Improve My Skills")
-                            main_remote_work_btn = gr.Button("🏠 Find Remote Work Options")
-                        
-                        review_skills_btn = gr.Button("Review My Skills", visible=False)
+                            review_skills_btn = gr.Button("Review My Skills", visible=False)
                     
                     # Skill visualization area (initially hidden)
                     with gr.Column(scale=1, visible=False) as skill_vis_col:
@@ -651,17 +641,17 @@ def build_ui():
                         )
                         skill_selection_error = gr.Markdown("", visible=False)
                         
-                        # Add skill analysis quick prompts buttons
+                        # Keep the skill analysis quick prompts buttons (these aren't redundant)
                         gr.Markdown("### Skill Analysis")
                         with gr.Row():
-                            vis_job_titles_btn = gr.Button("🔍 Find Job Titles For My Skills")
+                            select_skills_btn = gr.Button("🔍 Find Jobs Based on Selected Skills")
                             vis_market_demand_btn = gr.Button("📊 Check Market Demand")
                         
                         with gr.Row():
                             vis_skill_improve_btn = gr.Button("🚀 How To Improve My Skills")
                             vis_remote_jobs_btn = gr.Button("🏠 Find Remote Work With My Skills")
                         
-                        select_skills_btn = gr.Button("Find Jobs Based on These Skills")
+                        
                         
                         gr.Markdown("### Suggested Job Titles") 
                         job_suggestion_text = gr.Markdown("", visible=False)
@@ -677,32 +667,7 @@ def build_ui():
                     lambda: "", None, skill_msg)
                 
                 skill_clear.click(lambda: WELCOME_MESSAGES["skill_mapping"], None, skill_chat)
-                
-                # Quick prompt button handlers in main chat area
-                main_job_titles_btn.click(
-                    create_quick_prompt("Based on the skills we've identified, what job titles should I look for? Please suggest specific roles that would be a good match for my abilities."), 
-                    inputs=skill_chat, 
-                    outputs=[skill_chat, review_skills_btn]
-                )
-
-                main_skill_demand_btn.click(
-                    create_quick_prompt("Which of my identified skills are most in-demand in today's job market? Are there any that employers particularly value right now?"), 
-                    inputs=skill_chat, 
-                    outputs=[skill_chat, review_skills_btn]
-                )
-
-                main_skill_improve_btn.click(
-                    create_quick_prompt("What are some practical ways I could improve my existing skills? Are there free or low-cost resources you recommend?"), 
-                    inputs=skill_chat, 
-                    outputs=[skill_chat, review_skills_btn]
-                )
-
-                main_remote_work_btn.click(
-                    create_quick_prompt("With my current skills, what remote work opportunities might be available to me? I'm interested in flexible work options."), 
-                    inputs=skill_chat, 
-                    outputs=[skill_chat, review_skills_btn]
-                )
-                
+                                
                 review_skills_btn.click(
                     fn=lambda: gr.update(visible=True),
                     outputs=skill_vis_col
@@ -731,11 +696,6 @@ def build_ui():
                 )
                 
                 # Quick prompt button handlers in skill analysis area
-                vis_job_titles_btn.click(
-                    create_quick_prompt(f"Based on my skills {', '.join(user_skills[:3] if user_skills else [''])}, what job titles should I consider? Please suggest roles that match these abilities, including entry-level positions."), 
-                    inputs=skill_chat, 
-                    outputs=[skill_chat, review_skills_btn]
-                )
 
                 vis_market_demand_btn.click(
                     create_quick_prompt(f"How in-demand are my skills {', '.join(user_skills[:3] if user_skills else [''])} in today's job market? Which ones are most valuable to employers right now?"), 
