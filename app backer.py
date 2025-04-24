@@ -32,6 +32,7 @@ selected_skills = []
 suggested_jobs = []
 saved_jobs = []
 selected_job_title = ""
+saved_goals = []
 
 # Sample jobs to use as fallback if API fails
 sample_jobs = [
@@ -326,11 +327,15 @@ def get_system_prompt(module):
         
         "goal_setting": base_prompt + """
         In this module, help the user set SMART career goals (Specific, Measurable, Achievable, Relevant, Time-bound)
-        for the specific job title they're interested in: """ + selected_job_title + """.
+        for the job titles they've expressed interest in throughout the conversation.
+        
         Focus on building their confidence and self-efficacy.
         Break larger goals into small, achievable steps.
         Provide encouragement and address potential obstacles.
         Emphasize progress over perfection and help them visualize success.
+        
+        If the user asks about a specific job title, focus your goal recommendations on that role.
+        Consider both short-term goals (next 3 months) and longer-term goals (6-12 months).
         """,
         
         "job_matching": base_prompt + """
@@ -456,11 +461,24 @@ def skill_mapping_chat(message, history):
         return error_history, gr.update(visible=False)
 
 def goal_setting_chat(message, history):
-    """Handle the goal setting conversation"""
+    """Handle the goal setting conversation with job context"""
+    global saved_jobs, selected_job_title, suggested_jobs
+    
     try:
         logger.info(f"Processing goal setting chat. Message: {message}")
         logger.info(f"Current history: {history}")
-        logger.info(f"Current selected job title: {selected_job_title}")
+        
+        # Get available job context
+        available_jobs = []
+        if saved_jobs:
+            available_jobs = [job["title"] for job in saved_jobs]
+        elif selected_job_title:
+            available_jobs = [selected_job_title]
+        elif suggested_jobs:
+            available_jobs = suggested_jobs[:3]
+            
+        job_context = "Jobs of interest: " + ", ".join(available_jobs) if available_jobs else ""
+        logger.info(f"Job context for goal setting: {job_context}")
         
         history = history or []
         formatted_history = format_chat_history(history)
@@ -468,8 +486,10 @@ def goal_setting_chat(message, history):
         # Add the user message
         user_message = {"role": "user", "content": message}
         
-        # Get Claude's response with the selected job title in the system prompt
-        system_prompt = get_system_prompt("goal_setting")
+        # Create system prompt with job context
+        system_prompt = get_system_prompt("goal_setting") + "\n" + job_context
+        
+        # Get Claude's response
         response = get_claude_response(formatted_history + [user_message], system_prompt)
         
         # Update history and return
@@ -484,7 +504,7 @@ def goal_setting_chat(message, history):
         # Return a friendly error message and keep the conversation going
         error_history = history.copy() if history else []
         error_history.append({"role": "user", "content": message})
-        error_history.append({"role": "assistant", "content": f"I apologize for the technical difficulty. Could you please try rephrasing your message or asking something else?"})
+        error_history.append({"role": "assistant", "content": "I apologize for the technical difficulty. Could you please try rephrasing your message or asking something else?"})
         return error_history
 
 def job_matching_chat(message, history, job_search_results=None):
@@ -653,7 +673,6 @@ def proceed_to_goal_setting(job_title):
     
     # Update goal setting welcome message in the new format
     custom_welcome = f"""👋 Welcome to Goal Setting! I'll help you create achievable career goals for becoming a {selected_job_title}.
-
 Let's start by exploring:
 - What specific aspects of this role interest you?
 - What skills do you already have that apply to this role?
@@ -676,24 +695,56 @@ def create_quick_prompt(prompt_text):
         return skill_mapping_chat(prompt_text, history)
     return handle_specific_prompt
 
+# Create a new function to load goals tab with saved jobs
+def initialize_goal_setting():
+    """Initialize goal setting tab with saved jobs from earlier steps"""
+    global saved_jobs, selected_job_title, suggested_jobs
+    
+    available_jobs = []
+    
+    # First priority: use saved jobs from job search
+    if saved_jobs:
+        available_jobs = [job["title"] for job in saved_jobs]
+    # Second priority: use the selected job title from skill mapping
+    elif selected_job_title:
+        available_jobs = [selected_job_title]
+    # Third priority: use suggested jobs from skill mapping
+    elif suggested_jobs:
+        available_jobs = suggested_jobs[:3]  # Limit to 3 suggestions
+    
+    if not available_jobs:
+        # Default welcome if no jobs are available
+        return WELCOME_MESSAGES["goal_setting"]
+    
+    # Create a custom welcome message with the available jobs
+    job_list = ", ".join([f"**{job}**" for job in available_jobs])
+    
+    custom_welcome = f"""👋 Welcome to Goal Setting! 
+I noticed you've shown interest in these careers: {job_list}
+I can help you:
+- Identify skills needed for these roles
+- Create achievable goals to build those skills
+- Develop a step-by-step plan for career growth
+- Address any concerns or obstacles
+Which role would you like to focus on first?"""
+    
+    return [{"role": "assistant", "content": custom_welcome}]
+
 # Initialize welcome messages for each module
 WELCOME_MESSAGES = {
     "skill_mapping": [
         {"role": "assistant", "content": """👋 Welcome to Career Compass! Let's start by mapping your skills.
-
 Tell me about:
 - Work you've done (paid or unpaid)
 - Projects you've completed
 - Problems you've solved
 - Responsibilities you've handled
 - Skills you've taught yourself
-
 Don't worry if they seem informal - many skills are valuable!"""}
     ],
 
     "goal_setting": [
         {"role": "assistant", "content": """👋 Welcome to Goal Setting! I'll help you create achievable career goals and build confidence.
-
 Let's start by exploring:
 - What kind of work interests you?
 - What's important to you in a job? (Schedule, pay, location, etc.)
@@ -703,12 +754,10 @@ Let's start by exploring:
 
     "job_matching": [
         {"role": "assistant", "content": """👋 Welcome to Job Matching! I'll help you find opportunities that match your skills and goals.
-
 You can:
 1. Search for jobs using the search box above
 2. Ask me questions about specific careers
 3. Get advice on applying for jobs
-
 What type of work are you interested in exploring?"""}
     ]
 }
@@ -729,6 +778,211 @@ def check_api_status():
     except Exception as e:
         logger.error(f"API status check failed: {e}")
         return "❌ API connection failed. Using sample job data."
+
+# Add a function to create quick prompts for the goal setting tab
+def create_goal_quick_prompt(prompt_text):
+    """Create a function to handle a specific quick prompt for goal setting"""
+    def handle_specific_goal_prompt(history):
+        """Handle a specific pre-filled prompt for goal setting"""
+        return goal_setting_chat(prompt_text, history)
+    return handle_specific_goal_prompt
+
+# Add debug logging to save_goal function
+def save_goal(goal_text, job_title):
+    """Save a goal to the saved goals list"""
+    global saved_goals
+    
+    logger.info(f"save_goal called with text: '{goal_text}', job title: '{job_title}'")
+    
+    if not goal_text:
+        logger.warning("Empty goal text, not saving")
+        return [], gr.update(visible=False), gr.update(visible=True)
+    
+    # Create a goal object with completion status
+    goal = {
+        "text": goal_text,
+        "job_title": job_title if job_title else "General Career Goal",
+        "date_added": datetime.now().strftime("%Y-%m-%d"),
+        "completed": False
+    }
+    
+    # Add to saved goals
+    saved_goals.append(goal)
+    logger.info(f"Goal added. saved_goals now contains {len(saved_goals)} goals")
+    logger.info(f"Latest goal: {goal}")
+    
+    # Print the entire saved_goals list for debugging
+    logger.info(f"Full saved_goals list: {saved_goals}")
+    
+    # Update the saved goals display
+    result = update_saved_goals_display()
+    logger.info(f"update_saved_goals_display returned: {result}")
+    return result
+
+# Add this after saving a goal
+def check_table_visibility():
+    """Check if the table should be visible and force visibility if needed"""
+    global saved_goals
+    if saved_goals:
+        return gr.update(visible=True), gr.update(visible=False)
+    else:
+        return gr.update(visible=False), gr.update(visible=True)
+
+# Update the update_saved_goals_display function to add clearer completion status
+def update_saved_goals_display():
+    """Update the display of saved goals in tabular format"""
+    global saved_goals
+    
+    logger.info(f"update_saved_goals_display called, saved_goals length: {len(saved_goals)}")
+    
+    if not saved_goals:
+        logger.info("No saved goals found, hiding table and showing message")
+        return [], gr.update(visible=False), gr.update(visible=True)
+    
+    # Format goals as table rows with clearer completion visualization
+    display_data = []
+    
+    for i, goal in enumerate(saved_goals):
+        # Make the completion status more visible with symbols or text
+        completion_display = "✅ Complete" if goal["completed"] else "❌ Incomplete"
+        
+        display_data.append([
+            i,  # Goal ID (hidden from user but used for toggling)
+            goal["text"],
+            goal["job_title"],
+            goal["date_added"],
+            completion_display  # Use text instead of just boolean for better UX
+        ])
+    
+    logger.info(f"Formatted {len(display_data)} goals for table display")
+    logger.info(f"Table data: {display_data}")
+    logger.info(f"Returning: data={len(display_data)} rows, table visible=True, message visible=False")
+    
+    # Force explicit visibility update to ensure table appears
+    return display_data, gr.update(visible=True), gr.update(visible=False)
+
+# Update the toggle_goal_in_table function to be more robust
+def toggle_goal_in_table(evt: gr.SelectData, goals):
+    """Toggle the completion status of a goal when clicked in the table"""
+    global saved_goals
+    
+    try:
+        logger.info(f"toggle_goal_in_table called with event: {evt}")
+        logger.info(f"Current goals table data: {goals}")
+        
+        # Get the row that was clicked
+        row_index = evt.index[0]
+        col_index = evt.index[1]  # Also track column
+        
+        logger.info(f"Row index clicked: {row_index}, Column index: {col_index}")
+        
+        # Only toggle if user clicked the "Completed" column (index 4) or the whole row
+        if col_index == 4 or col_index is None:
+            if 0 <= row_index < len(saved_goals):
+                # Get the actual goal ID from the first column
+                goal_id = goals[row_index][0] if goals and len(goals) > row_index else row_index
+                logger.info(f"Goal ID to toggle: {goal_id}")
+                
+                # Toggle the completion status
+                if 0 <= goal_id < len(saved_goals):
+                    current_status = saved_goals[goal_id]["completed"]
+                    saved_goals[goal_id]["completed"] = not current_status
+                    logger.info(f"Toggled goal completion from {current_status} to {saved_goals[goal_id]['completed']}")
+                    
+                    # Return updated goals
+                    result = update_saved_goals_display()
+                    logger.info(f"Updated display after toggle: {result}")
+                    return result
+                else:
+                    logger.warning(f"Invalid goal ID: {goal_id}")
+            else:
+                logger.warning(f"Invalid row index: {row_index}")
+        else:
+            logger.info(f"Click on non-completion column: {col_index}, not toggling")
+        
+        # No changes, return current state
+        return goals, gr.update(visible=True), gr.update(visible=False)
+    except Exception as e:
+        logger.error(f"Error toggling goal in table: {e}")
+        logger.error(traceback.format_exc())
+        return goals, gr.update(visible=True), gr.update(visible=False)
+
+# Add debug function for saved goals
+def debug_saved_goals():
+    """Debug function to check saved goals state"""
+    global saved_goals
+    logger.info(f"DEBUG: Current saved goals: {saved_goals}")
+    
+    # Return a message showing the number of saved goals
+    message = f"DEBUG: There are {len(saved_goals)} saved goals."
+    if saved_goals:
+        message += "\n\nGoals in memory:\n"
+        for i, goal in enumerate(saved_goals):
+            message += f"{i}: {goal['text']} ({goal['job_title']}) - {'Completed' if goal['completed'] else 'Incomplete'}\n"
+    
+    # Try to force the table to update
+    display_data = []
+    for i, goal in enumerate(saved_goals):
+        display_data.append([
+            i, goal["text"], goal["job_title"], goal["date_added"], goal["completed"]
+        ])
+    
+    return message, display_data, gr.update(visible=len(saved_goals) > 0), gr.update(visible=len(saved_goals) == 0)
+
+# Add a new force refresh function
+def force_refresh_goals_table():
+    """Force refresh the goals table display"""
+    global saved_goals
+    
+    logger.info(f"Force refreshing goals table with {len(saved_goals)} goals")
+    
+    if not saved_goals:
+        return [], gr.update(visible=False), gr.update(visible=True)
+    
+    # Format goals as table rows
+    display_data = []
+    for i, goal in enumerate(saved_goals):
+        display_data.append([
+            i,
+            goal["text"],
+            goal["job_title"],
+            goal["date_added"],
+            goal["completed"]
+        ])
+    
+    # Explicitly force table visibility
+    return display_data, gr.update(visible=True), gr.update(visible=False)
+
+# Add a direct goal completion toggle function
+def toggle_goal_completion(goal_id):
+    """Directly toggle a goal's completion status by ID"""
+    global saved_goals
+    
+    logger.info(f"Directly toggling goal completion for goal ID: {goal_id}")
+    
+    try:
+        # Convert to integer if needed
+        goal_id = int(goal_id) if isinstance(goal_id, str) and goal_id.isdigit() else goal_id
+        
+        if isinstance(goal_id, int) and 0 <= goal_id < len(saved_goals):
+            # Toggle the completion status
+            current_status = saved_goals[goal_id]["completed"]
+            new_status = not current_status
+            saved_goals[goal_id]["completed"] = new_status
+            
+            logger.info(f"Goal {goal_id} toggled from {current_status} to {new_status}")
+            
+            # Return updated data and updated message
+            return (f"Changed goal '{saved_goals[goal_id]['text']}' status to: "
+                   f"{'✅ Completed' if new_status else '❌ Not Completed'}")
+        else:
+            logger.warning(f"Invalid goal ID to toggle: {goal_id}")
+            return "Error: Invalid goal ID"
+            
+    except Exception as e:
+        logger.error(f"Error in toggle_goal_completion: {e}")
+        logger.error(traceback.format_exc())
+        return f"Error toggling goal: {str(e)}"
 
 # UI Building
 def build_ui():
@@ -900,8 +1154,6 @@ def build_ui():
                         )
                         save_job_btn = gr.Button("Save Selected Job", visible=False)
                         
-                        set_goal_btn = gr.Button("Set Goals for This Career", visible=False)
-                        
                         gr.Markdown("### Saved Jobs")
                         saved_jobs_display = gr.Markdown("")
                 
@@ -955,9 +1207,6 @@ def build_ui():
                     lambda jobs: gr.update(visible=len(jobs) > 0),
                     inputs=job_data_state, 
                     outputs=save_job_btn
-                ).then(
-                    lambda: gr.update(visible=True),
-                    outputs=set_goal_btn
                 )
                 
                 job_clear.click(lambda: WELCOME_MESSAGES["job_matching"], None, job_chat)
@@ -990,38 +1239,168 @@ def build_ui():
                 # Goal tab state for passing job title
                 goal_chat_state = gr.State([])
                 
-                set_goal_btn.click(
-                    proceed_to_goal_setting,
-                    inputs=visible_job_query,
-                    outputs=goal_chat_state
-                ).then(
-                    lambda: gr.Tabs(selected=2),
-                    inputs=None,
-                    outputs=tabs
-                )
             
             # Goal Setting Tab
             with gr.Tab("🎯 Goal Setting") as goal_tab:
                 gr.Markdown("Step 3: Set achievable career goals and build confidence")
-                with gr.Column():
-                    goal_chat = gr.Chatbot(
-                        value=WELCOME_MESSAGES["goal_setting"],
-                        height=400,
-                        show_label=False,
-                        type="messages"
-                    )
-                    goal_msg = gr.Textbox(
-                        placeholder="Share your career aspirations and concerns...",
-                        show_label=False
-                    )
-                    goal_clear = gr.Button("Clear Chat")
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        goal_chat = gr.Chatbot(
+                            value=WELCOME_MESSAGES["goal_setting"],
+                            height=400,
+                            show_label=False,
+                            type="messages"
+                        )
+                        with gr.Row():
+                            goal_msg = gr.Textbox(
+                                placeholder="Share your career aspirations and concerns...",
+                                show_label=False,
+                                scale=9
+                            )
+                            goal_clear = gr.Button("Clear", scale=1)
+                        
+                        # Add quick prompt buttons for goal setting
+                        gr.Markdown("### Quick Goal Prompts")
+                        with gr.Row():
+                            create_goals_btn = gr.Button("🎯 Create Achievable Skill-Building Goals")
+                            create_plan_btn = gr.Button("📝 Develop Step-by-Step Career Plan")
+                        
+                        with gr.Row():
+                            current_role_btn = gr.Button("🚀 How To Advance In Current Role")
+                            overcome_barriers_btn = gr.Button("🧠 Overcome Career Barriers")
+                    
+                    # Add a column for goal saving and tracking
+                    with gr.Column(scale=1):
+                        gr.Markdown("### Save Your Goal")
+                        goal_text = gr.Textbox(
+                            label="Goal to Save",
+                            placeholder="Enter a specific goal you want to save...",
+                            lines=3
+                        )
+                        goal_job = gr.Textbox(
+                            label="Related Job Role (optional)",
+                            placeholder="Enter the job role this goal relates to"
+                        )
+                        save_goal_btn = gr.Button("Save This Goal")
+                        
+                        gr.Markdown("### Your Saved Goals")
+                        # Debug button to check saved goals
+                        debug_goals_btn = gr.Button("Debug: Check Saved Goals")
+                        
+                        goal_instructions = gr.Markdown(
+                            """### Managing Your Goals
+                            - Each goal has an ID number in the first column
+                            - To change a goal's completion status:
+                              1. Enter the goal ID in the "Goal ID to Toggle" field below
+                              2. Click "Toggle Completion Status"
+                            - Goals marked ✅ are complete, ❌ are incomplete""", 
+                            visible=False
+                        )
+                        saved_goals_table = gr.DataFrame(
+                            headers=["ID", "Goal", "Job Role", "Date Added", "Completed"],
+                            datatype=["number", "str", "str", "str", "bool"],
+                            col_count=(5, "fixed"),
+                            interactive=True,  # Changed from False to True to enable interactions
+                            visible=False,
+                            wrap=True,
+                            elem_id="saved_goals_table"  # Add an element ID for easier debugging
+                        )
+                        no_goals_message = gr.Markdown("No goals saved yet. Create goals in the chat and save them here.")
+                        
+                        # Add a new debugging output element
+                        debug_output = gr.Markdown("Debug information will appear here")
+                        
+                        # Add a force refresh button
+                        force_refresh_btn = gr.Button("Force Refresh Table")
+                        force_refresh_btn.click(
+                            force_refresh_goals_table,
+                            inputs=[],
+                            outputs=[saved_goals_table, goal_instructions, no_goals_message]
+                        )
+                        
+                        with gr.Row():
+                            goal_toggle_id = gr.Number(
+                                label="Goal ID to Toggle",
+                                info="Enter the ID from the table above",
+                                minimum=0,
+                                step=1,
+                                precision=0
+                            )
+                            goal_toggle_btn = gr.Button("Toggle Completion Status")
+
+                        goal_status_msg = gr.Markdown("")
+
+                        goal_toggle_btn.click(
+                            toggle_goal_completion,
+                            inputs=[goal_toggle_id],
+                            outputs=[goal_status_msg]
+                        ).then(
+                            force_refresh_goals_table,
+                            inputs=[],
+                            outputs=[saved_goals_table, goal_instructions, no_goals_message]
+                        )
                 
                 # Transfer state from job tab to goal tab
                 goal_chat_state.change(lambda x: x, goal_chat_state, goal_chat)
                 
+                # Event handlers for the goal setting tab
                 goal_msg.submit(goal_setting_chat, [goal_msg, goal_chat], [goal_chat]).then(
                     lambda: "", None, goal_msg)
                 goal_clear.click(lambda: WELCOME_MESSAGES["goal_setting"], None, goal_chat)
+                
+                # Add event handlers for quick prompts
+                create_goals_btn.click(
+                    create_goal_quick_prompt("Based on our discussion, can you suggest 3-5 specific, achievable goals to help me build the key skills needed for this role? I'd like a mix of short-term (1-3 months) and medium-term (3-6 months) goals."), 
+                    inputs=goal_chat, 
+                    outputs=goal_chat
+                )
+                
+                create_plan_btn.click(
+                    create_goal_quick_prompt("Can you create a step-by-step career development plan for me? I'd like specific actions I can take over the next 6 months to make progress toward this career."), 
+                    inputs=goal_chat, 
+                    outputs=goal_chat
+                )
+                
+                current_role_btn.click(
+                    create_goal_quick_prompt("I'm currently employed but want to grow in my role or prepare for advancement. What specific goals would help me develop professionally while in my current position?"), 
+                    inputs=goal_chat, 
+                    outputs=goal_chat
+                )
+                
+                overcome_barriers_btn.click(
+                    create_goal_quick_prompt("I face some barriers to career advancement like [limited education/transportation challenges/childcare responsibilities/gaps in employment]. What achievable goals can help me overcome these barriers?"), 
+                    inputs=goal_chat, 
+                    outputs=goal_chat
+                )
+                
+                # Add event handlers for goal saving
+                save_goal_btn.click(
+                    save_goal,
+                    inputs=[goal_text, goal_job],
+                    outputs=[saved_goals_table, goal_instructions, no_goals_message]
+                ).then(
+                    lambda: "", None, goal_text  # Clear the input after saving
+                ).then(
+                    check_table_visibility,  # Force check visibility
+                    inputs=[],
+                    outputs=[saved_goals_table, no_goals_message]
+                ).then(
+                    lambda: "Goal saved successfully! The goal has been added to your list.", None, debug_output
+                )
+                
+                # Add event handler for clicking a row in the table
+                saved_goals_table.select(
+                    toggle_goal_in_table,
+                    inputs=[saved_goals_table],
+                    outputs=[saved_goals_table, goal_instructions, no_goals_message]
+                )
+                
+                # Add the event handler for the debug button
+                debug_goals_btn.click(
+                    debug_saved_goals,
+                    inputs=[],
+                    outputs=[debug_output, saved_goals_table, goal_instructions, no_goals_message]
+                )
         
         # About section
         with gr.Accordion("About Career Compass", open=False):
@@ -1036,6 +1415,15 @@ def build_ui():
             
             This tool is designed to be supportive and practical, meeting you where you are in your career journey.
             """)
+        
+        # Add a tab change event handler
+        tabs.select(
+            fn=lambda: initialize_goal_setting(),
+            inputs=None,
+            outputs=goal_chat,
+            # This triggers specifically when the Goal Setting tab is selected
+            api_name="goal_tab_selected"
+        )
     
     return app
 
