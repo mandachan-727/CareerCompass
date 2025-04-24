@@ -1,4 +1,5 @@
 import os
+import re
 import gradio as gr
 import anthropic
 import requests
@@ -214,68 +215,86 @@ def extract_requirements(description):
 
 # Generate job titles based on skills
 def generate_job_titles(skills, count=10):
-    """Generate job title suggestions based on user's skills"""
-    # In production, this would use AI to dynamically generate relevant jobs
-    # For demo, we'll use a predefined mapping with some randomization
-    
-    skill_to_jobs = {
-        "communication": ["Customer Service Representative", "Sales Associate", "Receptionist", 
-                        "Call Center Agent", "Public Relations Assistant"],
-        "organization": ["Administrative Assistant", "Office Coordinator", "Data Entry Specialist",
-                        "Inventory Clerk", "Project Coordinator"],
-        "technical": ["IT Support Technician", "Computer Repair Specialist", "Network Technician",
-                     "Software Tester", "Junior Developer"],
-        "creative": ["Graphic Design Assistant", "Content Creator", "Social Media Coordinator",
-                    "Photography Assistant", "Junior Copywriter"],
-        "interpersonal": ["Customer Service Representative", "Sales Associate", "Retail Associate",
-                         "Hospitality Staff", "Patient Care Assistant"],
-        "problem-solving": ["Technical Support", "Customer Service", "Quality Assurance Tester",
-                           "Maintenance Technician", "Help Desk Support"],
-        "adaptability": ["Temporary Office Staff", "Event Staff", "Seasonal Retail Associate",
-                        "On-Call Support", "Substitute Teacher Assistant"],
-        "detail-oriented": ["Quality Control Inspector", "Data Entry Specialist", "Proofreader",
-                           "Administrative Assistant", "Inventory Specialist"],
-        "time-management": ["Scheduling Coordinator", "Administrative Assistant", "Delivery Driver",
-                           "Order Fulfillment Specialist", "Production Assistant"],
-        "teamwork": ["Retail Team Member", "Restaurant Staff", "Warehouse Associate",
-                    "Customer Support Team Member", "Office Assistant"],
-        "leadership": ["Shift Supervisor", "Team Lead", "Assistant Manager",
-                      "Project Coordinator", "Training Assistant"],
-        "analytical": ["Data Entry Analyst", "Research Assistant", "Inventory Analyst",
-                      "Quality Assurance Tester", "Junior Bookkeeper"],
-        "physical": ["Warehouse Associate", "Delivery Driver", "Retail Stock Associate",
-                    "Manufacturing Assembler", "Fitness Center Staff"],
-        "caregiving": ["Home Health Aide", "Childcare Assistant", "Elder Care Provider",
-                      "Pet Care Attendant", "Residential Support Staff"],
-        "teaching": ["Teacher's Assistant", "Tutor", "After-School Program Staff",
-                    "Training Assistant", "Educational Support Staff"]
-    }
-    
-    # Get job suggestions based on skills
-    suggested_titles = set()
-    for skill in skills:
-        skill_lower = skill.lower()
-        # Find the closest matching skill category
-        for category in skill_to_jobs:
-            if category in skill_lower or any(word in skill_lower for word in category.split('-')):
-                suggested_titles.update(skill_to_jobs[category])
-                break
-    
-    # If we couldn't find enough matches, add some default options
-    defaults = ["Administrative Assistant", "Customer Service Representative", 
-                "Retail Associate", "Warehouse Associate", "Data Entry Specialist"]
-    
-    suggested_titles = list(suggested_titles) if suggested_titles else []
-    while len(suggested_titles) < count and defaults:
-        default_job = defaults.pop(0)
-        if default_job not in suggested_titles:
-            suggested_titles.append(default_job)
-    
-    # If we have too many, randomly select to reach desired count
-    if len(suggested_titles) > count:
-        suggested_titles = random.sample(suggested_titles, count)
-    
-    return suggested_titles
+    """Generate job title suggestions based on user's skills using Claude AI"""
+    try:
+        logger.info(f"Generating job titles for skills: {skills}")
+        
+        if not skills or not isinstance(skills, list):
+            logger.warning("No skills provided or invalid format")
+            # Fallback to default options if no skills
+            return ["Administrative Assistant", "Customer Service Representative", 
+                    "Retail Associate", "Warehouse Associate", "Data Entry Specialist"]
+        
+        # Create a prompt for Claude to suggest job titles based on skills
+        prompt = [
+            {"role": "user", "content": f"""Based on the following skills, suggest {count} relevant entry-level 
+            or early-career job titles that would be good matches. These should be realistic positions 
+            that don't require extensive experience or advanced degrees.
+            
+            Skills: {', '.join(skills)}
+            
+            Return ONLY a simple list of job titles, one per line. Do not include explanations, 
+            descriptions, or formatting beyond the titles themselves."""}
+        ]
+        
+        # Get job title suggestions from Claude
+        system_prompt = """You are a career advisor specializing in helping people find entry-level and 
+        early-career positions based on their transferable skills. Focus on practical, accessible job titles 
+        that don't require extensive experience or advanced education."""
+        
+        response = client.messages.create(
+            model=MODEL,
+            system=system_prompt,
+            messages=prompt,
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        # Process the response to extract job titles
+        job_titles_text = response.content[0].text.strip()
+        logger.info(f"Claude response raw: {job_titles_text[:100]}...")
+        
+        # Parse job titles from response (handling different formats)
+        job_titles = []
+        for line in job_titles_text.split('\n'):
+            # Remove any list markers or extra formatting
+            cleaned_line = line.strip()
+            # Remove numbered list markers (1., 2., etc.)
+            if cleaned_line and re.match(r'^\d+\.', cleaned_line):
+                cleaned_line = re.sub(r'^\d+\.\s*', '', cleaned_line)
+            # Remove bullet points
+            cleaned_line = cleaned_line.replace('• ', '').replace('* ', '')
+            
+            if cleaned_line:
+                job_titles.append(cleaned_line)
+        
+        # Ensure we don't exceed requested count
+        job_titles = job_titles[:count]
+        
+        logger.info(f"Generated {len(job_titles)} job titles: {job_titles}")
+        
+        # If we didn't get enough suggestions, add some defaults
+        defaults = ["Administrative Assistant", "Customer Service Representative", 
+                    "Retail Associate", "Warehouse Associate", "Data Entry Specialist"]
+        
+        while len(job_titles) < count and defaults:
+            default_job = defaults.pop(0)
+            if default_job not in job_titles:
+                job_titles.append(default_job)
+        
+        return job_titles
+        
+    except Exception as e:
+        logger.error(f"Error generating job titles: {e}")
+        logger.error(traceback.format_exc())
+        
+        # Fallback to default options if the AI call fails
+        defaults = ["Administrative Assistant", "Customer Service Representative", 
+                    "Retail Associate", "Warehouse Associate", "Data Entry Specialist",
+                    "Office Assistant", "Sales Associate", "Receptionist", 
+                    "Customer Support Representative", "Inventory Clerk"]
+        
+        return defaults[:count]
 
 # Chat History Management
 def format_chat_history(history):
@@ -673,6 +692,7 @@ def proceed_to_goal_setting(job_title):
     
     # Update goal setting welcome message in the new format
     custom_welcome = f"""👋 Welcome to Goal Setting! I'll help you create achievable career goals for becoming a {selected_job_title}.
+
 Let's start by exploring:
 - What specific aspects of this role interest you?
 - What skills do you already have that apply to this role?
@@ -720,12 +740,15 @@ def initialize_goal_setting():
     job_list = ", ".join([f"**{job}**" for job in available_jobs])
     
     custom_welcome = f"""👋 Welcome to Goal Setting! 
+
 I noticed you've shown interest in these careers: {job_list}
+
 I can help you:
 - Identify skills needed for these roles
 - Create achievable goals to build those skills
 - Develop a step-by-step plan for career growth
 - Address any concerns or obstacles
+
 Which role would you like to focus on first?"""
     
     return [{"role": "assistant", "content": custom_welcome}]
@@ -734,17 +757,20 @@ Which role would you like to focus on first?"""
 WELCOME_MESSAGES = {
     "skill_mapping": [
         {"role": "assistant", "content": """👋 Welcome to Career Compass! Let's start by mapping your skills.
+
 Tell me about:
 - Work you've done (paid or unpaid)
 - Projects you've completed
 - Problems you've solved
 - Responsibilities you've handled
 - Skills you've taught yourself
+
 Don't worry if they seem informal - many skills are valuable!"""}
     ],
 
     "goal_setting": [
         {"role": "assistant", "content": """👋 Welcome to Goal Setting! I'll help you create achievable career goals and build confidence.
+
 Let's start by exploring:
 - What kind of work interests you?
 - What's important to you in a job? (Schedule, pay, location, etc.)
@@ -754,10 +780,12 @@ Let's start by exploring:
 
     "job_matching": [
         {"role": "assistant", "content": """👋 Welcome to Job Matching! I'll help you find opportunities that match your skills and goals.
+
 You can:
 1. Search for jobs using the search box above
 2. Ask me questions about specific careers
 3. Get advice on applying for jobs
+
 What type of work are you interested in exploring?"""}
     ]
 }
