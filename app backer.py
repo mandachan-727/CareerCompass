@@ -39,16 +39,41 @@ sample_jobs = [
         "title": "HVAC Technician Apprentice",
         "company": "Cool Air Services",
         "location": "Harrisburg, PA",
-        "description": "Entry-level position learning HVAC installation and repair. No experience required, training provided.",
-        "requirements": "High school diploma or GED, driver's license, basic technical aptitude",
         "url": "https://example.com/job1",
         "remote": False
     },
-    # ... rest of sample jobs
+    {
+        "title": "Customer Service Representative",
+        "company": "Retail Support Inc.",
+        "location": "Remote",
+        "url": "https://example.com/job2",
+        "remote": True
+    },
+    {
+        "title": "Warehouse Associate",
+        "company": "Distribution Central",
+        "location": "Phoenix, AZ",
+        "url": "https://example.com/job3",
+        "remote": False
+    },
+    {
+        "title": "Office Assistant",
+        "company": "Business Solutions LLC",
+        "location": "Chicago, IL",
+        "url": "https://example.com/job4",
+        "remote": False
+    },
+    {
+        "title": "Entry-level Sales Representative",
+        "company": "Growth Partners",
+        "location": "Dallas, TX",
+        "url": "https://example.com/job5",
+        "remote": False
+    }
 ]
 
 # Search jobs using the Indeed API
-def search_jobs(query, location, limit=5):
+def search_jobs(query, location, limit=10, include_description=False):
     """Search for jobs using the Indeed API"""
     import requests
     
@@ -72,15 +97,11 @@ def search_jobs(query, location, limit=5):
         "query": str(query),
         "location": str(location) if location else "remote",
         "page_id": "1",
-        "locality": "us",  # Changed from "locale" to "locality"
-        "fromage": "1",    # Added parameter from the example
+        "locality": "us",
+        "fromage": "1",
         "radius": "50",
-        "sort": "date"     # Changed from "relevance" to "date"
+        "sort": "date"
     }
-    
-    # "limit" parameter might not be supported, removing it
-    # if limit:
-    #     params["limit"] = str(limit)
     
     # Make sure API key is clean
     api_key = os.environ.get("RAPIDAPI_KEY", "")
@@ -102,7 +123,6 @@ def search_jobs(query, location, limit=5):
         logger.info(f"API response received with structure: {list(data.keys())}")
         
         # The response structure might be different from what we expected
-        # Check the actual response structure and adapt accordingly
         formatted_jobs = []
         
         # Adjust this part based on the actual API response format
@@ -123,31 +143,37 @@ def search_jobs(query, location, limit=5):
                 company = job_data.get("company_name", "Unknown Company")
                 job_location = job_data.get("job_location", {}).get("location_name", 
                                                        location if location else "Remote")
-                description = job_data.get("job_description", "No description available")
+                description = job_data.get("job_description", "No description available") if include_description else ""
                 url_link = job_data.get("job_apply_link", "https://indeed.com")
             else:
                 # Direct structure - adapt field names based on actual API response
                 title = job.get("title", job.get("job_title", "Untitled Position"))
                 company = job.get("company", job.get("company_name", "Unknown Company"))
                 job_location = job.get("location", location if location else "Remote")
-                description = job.get("description", job.get("snippet", "No description available"))
+                description = job.get("description", job.get("snippet", "No description available")) if include_description else ""
                 url_link = job.get("url", job.get("link", "https://indeed.com"))
             
-            # Limit description length and add ellipsis
-            if description and len(description) > 300:
-                short_description = description.strip()[:300] + "..."
-            else:
-                short_description = description
-            
-            formatted_jobs.append({
+            # Create a job object with or without description based on the flag
+            job_obj = {
                 "title": title,
                 "company": company,
                 "location": job_location,
-                "description": short_description,
-                "requirements": extract_requirements(description),
                 "url": url_link,
                 "remote": "remote" in str(job_location).lower() or "remote" in str(description).lower()
-            })
+            }
+            
+            # Only include description and requirements if requested
+            if include_description and description:
+                # Limit description length and add ellipsis
+                if len(description) > 300:
+                    short_description = description.strip()[:300] + "..."
+                else:
+                    short_description = description
+                
+                job_obj["description"] = short_description
+                job_obj["requirements"] = extract_requirements(description)
+            
+            formatted_jobs.append(job_obj)
         
         return formatted_jobs
         
@@ -509,8 +535,8 @@ def job_search(query, location, history):
     loading_history.append({"role": "assistant", "content": f"Searching for jobs matching '{query}' in '{location if location else 'any location'}'..."})
     
     try:
-        # Get job search results
-        jobs = search_jobs(query, location)
+        # Get job search results (without descriptions for efficiency)
+        jobs = search_jobs(query, location, include_description=False)
         
         if not jobs:
             # No results found
@@ -855,8 +881,25 @@ def build_ui():
                     
                     with gr.Column(scale=1):
                         gr.Markdown("### Search Results")
-                        job_results = gr.JSON(label="Jobs", visible=False)
+                        # Replace JSON with a DataFrame component
+                        job_results = gr.DataFrame(
+                            headers=["#", "Title", "Company", "Location", "Remote", "URL"],
+                            datatype=["number", "str", "str", "str", "bool", "str"],
+                            visible=False,
+                            row_count=(5, "dynamic"),
+                        )
+                        # Store the full job data in a State (hidden from UI)
+                        job_data_state = gr.State([])
+                        
+                        # Replace the dropdown with a number input
+                        job_index_input = gr.Number(
+                            label="Job Number (from table above)", 
+                            minimum=1,
+                            step=1,
+                            visible=False
+                        )
                         save_job_btn = gr.Button("Save Selected Job", visible=False)
+                        
                         set_goal_btn = gr.Button("Set Goals for This Career", visible=False)
                         
                         gr.Markdown("### Saved Jobs")
@@ -866,15 +909,51 @@ def build_ui():
                 job_msg.submit(job_matching_chat, [job_msg, job_chat], [job_chat]).then(
                     lambda: "", None, job_msg)
                 
+                # Update this function to format job results for the DataFrame
+                def format_jobs_for_display(jobs):
+                    if not jobs:
+                        return []
+                    
+                    # Create data for DataFrame display with row numbers
+                    display_data = []
+                    
+                    for i, job in enumerate(jobs):
+                        display_data.append([
+                            i+1,  # Add row number (1-based for user friendliness)
+                            job["title"],
+                            job["company"],
+                            job["location"],
+                            job["remote"],
+                            job["url"]
+                        ])
+                    
+                    return display_data
+                
                 job_search_btn.click(
                     job_search, 
                     [visible_job_query, job_location, job_chat], 
-                    [job_chat, job_results]
+                    [job_chat, job_data_state]
+                ).then(
+                    # Clear the results first
+                    lambda: [], 
+                    None,
+                    [job_results]
+                ).then(
+                    # Just transform the job data for display table
+                    lambda jobs: format_jobs_for_display(jobs),
+                    inputs=job_data_state,
+                    outputs=job_results
                 ).then(
                     lambda: gr.update(visible=True),
                     outputs=job_results
                 ).then(
-                    lambda: gr.update(visible=True),
+                    # Show the number input if we have results
+                    lambda jobs: gr.update(visible=len(jobs) > 0, maximum=len(jobs)),
+                    inputs=job_data_state,
+                    outputs=job_index_input
+                ).then(
+                    lambda jobs: gr.update(visible=len(jobs) > 0),
+                    inputs=job_data_state, 
                     outputs=save_job_btn
                 ).then(
                     lambda: gr.update(visible=True),
@@ -883,9 +962,28 @@ def build_ui():
                 
                 job_clear.click(lambda: WELCOME_MESSAGES["job_matching"], None, job_chat)
                 
+                # Update the save_selected_job function to work with the number input
+                def save_selected_job(selected_index, all_jobs):
+                    if not selected_index or not all_jobs:
+                        return gr.update(value="Please enter a job number to save.")
+                    
+                    try:
+                        # Convert to zero-based index
+                        index = int(selected_index) - 1
+                        
+                        if index < 0 or index >= len(all_jobs):
+                            return gr.update(value=f"Invalid job number. Please enter a number between 1 and {len(all_jobs)}.")
+                        
+                        # Get the selected job
+                        job = all_jobs[index]
+                        return save_job(job)
+                    except Exception as e:
+                        logger.error(f"Error in save_selected_job: {e}")
+                        return gr.update(value="Error saving job. Please try again.")
+                
                 save_job_btn.click(
-                    save_job,
-                    inputs=job_results,
+                    save_selected_job,
+                    inputs=[job_index_input, job_data_state],
                     outputs=saved_jobs_display
                 )
                 
