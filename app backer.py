@@ -14,10 +14,17 @@ logging.basicConfig(level=logging.INFO,
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize the Anthropic client
-# Note: In production, API key should be passed as an environment variable
+# Initialize API clients
+# Note: In production, API keys should be passed as environment variables
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-3-5-sonnet-20240620"  # Using Claude 3.5 Sonnet for a good balance of capability/cost
+
+# Make sure users set their API keys
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    logger.warning("ANTHROPIC_API_KEY not set. Please set this environment variable.")
+    
+if not os.environ.get("RAPIDAPI_KEY"):
+    logger.warning("RAPIDAPI_KEY not set. Job search will fall back to sample data.")
 
 # Shared state variables for cross-section data sharing
 user_skills = []
@@ -26,94 +33,157 @@ suggested_jobs = []
 saved_jobs = []
 selected_job_title = ""
 
-# Mock job board API for MVP (would be replaced with actual API integration)
+# Sample jobs to use as fallback if API fails
+sample_jobs = [
+    {
+        "title": "HVAC Technician Apprentice",
+        "company": "Cool Air Services",
+        "location": "Harrisburg, PA",
+        "description": "Entry-level position learning HVAC installation and repair. No experience required, training provided.",
+        "requirements": "High school diploma or GED, driver's license, basic technical aptitude",
+        "url": "https://example.com/job1",
+        "remote": False
+    },
+    # ... rest of sample jobs
+]
+
+# Search jobs using the Indeed API
 def search_jobs(query, location, limit=5):
-    """Mock function to simulate job search API"""
-    # In a production app, this would integrate with Indeed, LinkedIn, etc.
-    sample_jobs = [
-        {
-            "title": "HVAC Technician Apprentice",
-            "company": "Cool Air Services",
-            "location": "Harrisburg, PA",
-            "description": "Entry-level position learning HVAC installation and repair. No experience required, training provided.",
-            "requirements": "High school diploma or GED, driver's license, basic technical aptitude",
-            "url": "https://example.com/job1",
-            "remote": False
-        },
-        {
-            "title": "Remote Customer Support Specialist",
-            "company": "TechHelp Solutions",
-            "location": "Remote (US-based)",
-            "description": "Provide technical support to customers via phone and chat. Flexible hours available.",
-            "requirements": "Strong communication skills, basic computer knowledge, reliable internet",
-            "url": "https://example.com/job2",
-            "remote": True
-        },
-        {
-            "title": "Electronics Repair Technician",
-            "company": "FixIt Electronics",
-            "location": "Allentown, PA",
-            "description": "Diagnose and repair consumer electronics. Training provided for promising candidates.",
-            "requirements": "Technical aptitude, problem-solving skills, customer service experience",
-            "url": "https://example.com/job3",
-            "remote": False
-        },
-        {
-            "title": "Home Health Aide - Flexible Schedule",
-            "company": "Caring Connections Health",
-            "location": "Allentown, PA",
-            "description": "Provide in-home care for elderly clients. Choose your own hours and clients.",
-            "requirements": "Compassion, reliability, basic healthcare knowledge",
-            "url": "https://example.com/job4",
-            "remote": False
-        },
-        {
-            "title": "Virtual Administrative Assistant",
-            "company": "Remote Office Solutions",
-            "location": "Remote",
-            "description": "Provide administrative support to small businesses. Set your own hours.",
-            "requirements": "Organization skills, communication skills, basic computer proficiency",
-            "url": "https://example.com/job5",
-            "remote": True
-        },
-        {
-            "title": "Project Manager Assistant",
-            "company": "BuildRight Construction",
-            "location": "Philadelphia, PA",
-            "description": "Help coordinate construction projects and teams. Learn project management on the job.",
-            "requirements": "Organization skills, communication skills, reliable transportation",
-            "url": "https://example.com/job6",
-            "remote": False
-        },
-        {
-            "title": "Social Media Coordinator",
-            "company": "Digital Marketing Group",
-            "location": "Remote",
-            "description": "Create and schedule content for small business social media accounts.",
-            "requirements": "Creativity, basic writing skills, familiarity with social platforms",
-            "url": "https://example.com/job7",
-            "remote": True
-        },
-        {
-            "title": "Hotel Front Desk Associate",
-            "company": "Comfort Suites",
-            "location": "Pittsburgh, PA",
-            "description": "Welcome guests, manage reservations, and provide excellent customer service.",
-            "requirements": "Customer service skills, basic computer skills, professional demeanor",
-            "url": "https://example.com/job8",
-            "remote": False
-        }
-    ]
+    """Search for jobs using the Indeed API"""
+    import requests
     
-    filtered_jobs = []
-    for job in sample_jobs:
-        if (query.lower() in job["title"].lower() or 
-            query.lower() in job["description"].lower() or 
-            not query):  # If no query, include all
-            if not location or location.lower() in job["location"].lower():
-                filtered_jobs.append(job)
+    # The correct URL path according to the documentation
+    url = "https://indeed12.p.rapidapi.com/jobs/search"
     
-    return filtered_jobs[:limit]
+    # Parameter validation and defaults
+    if not query:
+        query = "entry level"  # Default search term
+    
+    # More aggressive cleaning for all parameters
+    # Remove all non-ASCII characters from query and location
+    if isinstance(query, str):
+        query = ''.join(char for char in query if ord(char) < 128)
+    
+    if location and isinstance(location, str):
+        location = ''.join(char for char in location if ord(char) < 128)
+    
+    # Prepare query parameters - EXACTLY matching the example in the API docs
+    params = {
+        "query": str(query),
+        "location": str(location) if location else "remote",
+        "page_id": "1",
+        "locality": "us",  # Changed from "locale" to "locality"
+        "fromage": "1",    # Added parameter from the example
+        "radius": "50",
+        "sort": "date"     # Changed from "relevance" to "date"
+    }
+    
+    # "limit" parameter might not be supported, removing it
+    # if limit:
+    #     params["limit"] = str(limit)
+    
+    # Make sure API key is clean
+    api_key = os.environ.get("RAPIDAPI_KEY", "")
+    if isinstance(api_key, str):
+        api_key = ''.join(char for char in api_key if ord(char) < 128)
+    
+    headers = {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": "indeed12.p.rapidapi.com"
+    }
+    
+    try:
+        logger.info(f"Calling Indeed API with params: {params}")
+        
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()  # Raise exception for 4XX/5XX responses
+        
+        data = response.json()
+        logger.info(f"API response received with structure: {list(data.keys())}")
+        
+        # The response structure might be different from what we expected
+        # Check the actual response structure and adapt accordingly
+        formatted_jobs = []
+        
+        # Adjust this part based on the actual API response format
+        if "hits" in data:
+            job_items = data.get("hits", [])
+        else:
+            # If the API returns a different structure, try to find the jobs array
+            job_items = data.get("jobs", [])
+            if not job_items and isinstance(data, list):
+                job_items = data  # Sometimes the API returns an array directly
+        
+        # Process only up to the limit
+        for job in job_items[:limit]:
+            # The structure might vary, so adapt field paths accordingly
+            if "job_data" in job:
+                job_data = job.get("job_data", {})
+                title = job_data.get("job_title", "Untitled Position")
+                company = job_data.get("company_name", "Unknown Company")
+                job_location = job_data.get("job_location", {}).get("location_name", 
+                                                       location if location else "Remote")
+                description = job_data.get("job_description", "No description available")
+                url_link = job_data.get("job_apply_link", "https://indeed.com")
+            else:
+                # Direct structure - adapt field names based on actual API response
+                title = job.get("title", job.get("job_title", "Untitled Position"))
+                company = job.get("company", job.get("company_name", "Unknown Company"))
+                job_location = job.get("location", location if location else "Remote")
+                description = job.get("description", job.get("snippet", "No description available"))
+                url_link = job.get("url", job.get("link", "https://indeed.com"))
+            
+            # Limit description length and add ellipsis
+            if description and len(description) > 300:
+                short_description = description.strip()[:300] + "..."
+            else:
+                short_description = description
+            
+            formatted_jobs.append({
+                "title": title,
+                "company": company,
+                "location": job_location,
+                "description": short_description,
+                "requirements": extract_requirements(description),
+                "url": url_link,
+                "remote": "remote" in str(job_location).lower() or "remote" in str(description).lower()
+            })
+        
+        return formatted_jobs
+        
+    except Exception as e:
+        logger.error(f"Error calling Indeed API: {e}")
+        logger.error(traceback.format_exc())
+        # Fall back to sample jobs if API fails
+        return sample_jobs[:limit]  # Use the existing sample_jobs as fallback
+
+def extract_requirements(description):
+    """Extract likely requirements from job description"""
+    # For a simple extraction, look for common requirement indicators
+    if not description:
+        return "No requirements specified"
+    
+    # Look for common requirement sections
+    req_indicators = ["requirements", "qualifications", "what you'll need", "what you need", 
+                     "skills required", "required skills"]
+    
+    lower_desc = description.lower()
+    
+    # Try to find requirements section
+    for indicator in req_indicators:
+        if indicator in lower_desc:
+            # Find the indicator position
+            pos = lower_desc.find(indicator)
+            # Extract text after the indicator (up to 200 chars)
+            req_text = description[pos:pos+200]
+            # Trim to the first period or end of string
+            period_pos = req_text.find(". ")
+            if period_pos > 0:
+                req_text = req_text[:period_pos+1]
+            return req_text
+    
+    # If no specific requirements section found, return a generic message
+    return "See job description for requirements"
 
 # Generate job titles based on skills
 def generate_job_titles(skills, count=10):
@@ -434,27 +504,46 @@ def job_matching_chat(message, history, job_search_results=None):
 
 def job_search(query, location, history):
     """Search for jobs and integrate results into the conversation"""
-    # Get job search results
-    jobs = search_jobs(query, location)
+    # Create loading message
+    loading_history = history.copy() if history else []
+    loading_history.append({"role": "assistant", "content": f"Searching for jobs matching '{query}' in '{location if location else 'any location'}'..."})
     
-    # Format job results for the user
-    job_results_text = "Here are some job opportunities based on your search:\n\n"
-    for i, job in enumerate(jobs, 1):
-        job_results_text += f"**{i}. {job['title']} - {job['company']}**\n"
-        job_results_text += f"**Location:** {job['location']}\n"
-        job_results_text += f"**Description:** {job['description']}\n"
-        job_results_text += f"**Requirements:** {job['requirements']}\n"
-        job_results_text += f"**Remote:** {'Yes' if job['remote'] else 'No'}\n\n"
-    
-    if not jobs:
-        job_results_text = "No jobs found matching your criteria. Try broadening your search terms."
-    
-    # Update conversation with job results
-    updated_history = job_matching_chat("Show me jobs related to: " + query + 
-                                         (" in " + location if location else ""), 
-                                        history, jobs)
-    
-    return updated_history, jobs
+    try:
+        # Get job search results
+        jobs = search_jobs(query, location)
+        
+        if not jobs:
+            # No results found
+            updated_history = job_matching_chat(
+                f"I searched for '{query}' jobs {('in ' + location) if location else ''} but couldn't find any matches. "
+                f"Do you want to try different keywords or locations?", 
+                loading_history
+            )
+            return updated_history, []
+        
+        # Update conversation with job results
+        updated_history = job_matching_chat(
+            f"Show me jobs related to: {query}" + 
+            (f" in {location}" if location else ""), 
+            loading_history, 
+            jobs
+        )
+        
+        return updated_history, jobs
+        
+    except Exception as e:
+        logger.error(f"Error in job search: {e}")
+        logger.error(traceback.format_exc())
+        
+        # Return error message
+        error_history = loading_history.copy()
+        error_history.append({
+            "role": "assistant", 
+            "content": "I'm having trouble connecting to the job search service right now. Let me show you some sample positions instead."
+        })
+        
+        # Fall back to sample jobs
+        return error_history, sample_jobs[:5]
 
 # Functions to handle the new flow
 def display_skills():
@@ -598,6 +687,23 @@ What type of work are you interested in exploring?"""}
     ]
 }
 
+# Check API status
+def check_api_status():
+    """Check if the Indeed API is accessible"""
+    if not os.environ.get("RAPIDAPI_KEY"):
+        return "⚠️ API key not set. Using sample job data."
+    
+    try:
+        # Make a minimal API call to check status using ASCII-only query
+        result = search_jobs("test", "remote", 1)
+        if result and isinstance(result, list) and len(result) > 0:
+            return "✅ Indeed API connected"
+        else:
+            return "⚠️ API returned empty results. Using sample job data."
+    except Exception as e:
+        logger.error(f"API status check failed: {e}")
+        return "❌ API connection failed. Using sample job data."
+
 # UI Building
 def build_ui():
     """Create the Gradio interface with the new linear flow"""
@@ -718,6 +824,10 @@ def build_ui():
             # Job Matching Tab
             with gr.Tab("💼 Job Matching") as job_tab:
                 gr.Markdown("Step 2: Find job opportunities that match your skills and goals")
+                
+                # Add API status indicator
+                api_status = gr.Markdown(check_api_status())
+                
                 with gr.Row():
                     visible_job_query = gr.Textbox(
                         placeholder="Job title, skills, or keywords",
