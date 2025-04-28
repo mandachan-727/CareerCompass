@@ -567,20 +567,26 @@ def job_matching_chat(message, history, job_search_results=None):
         error_history.append({"role": "assistant", "content": f"I apologize for the technical difficulty. Could you please try rephrasing your message or asking something else?"})
         return error_history
 
-def job_search(query, location, history):
+def job_search(query, location, industry, history):
     """Search for jobs and integrate results into the conversation"""
     # Create loading message
     loading_history = history.copy() if history else []
-    loading_history.append({"role": "assistant", "content": f"Searching for jobs matching '{query}' in '{location if location else 'any location'}'..."})
+    industry_text = f" in the {industry} industry" if industry and industry != "Any Industry" else ""
+    loading_history.append({"role": "assistant", "content": f"Searching for jobs matching '{query}'{industry_text} in '{location if location else 'any location'}'..."})
     
     try:
+        # Build a combined query with industry if specified
+        search_query = query
+        if industry and industry != "Any Industry":
+            search_query = f"{query} {industry}"
+            
         # Get job search results (without descriptions for efficiency)
-        jobs = search_jobs(query, location, include_description=False)
+        jobs = search_jobs(search_query, location, include_description=False)
         
         if not jobs:
             # No results found
             updated_history = job_matching_chat(
-                f"I searched for '{query}' jobs {('in ' + location) if location else ''} but couldn't find any matches. "
+                f"I searched for '{query}' jobs{industry_text} {('in ' + location) if location else ''} but couldn't find any matches. "
                 f"Do you want to try different keywords or locations?", 
                 loading_history
             )
@@ -588,7 +594,7 @@ def job_search(query, location, history):
         
         # Update conversation with job results
         updated_history = job_matching_chat(
-            f"Show me jobs related to: {query}" + 
+            f"Show me jobs related to: {query}{industry_text}" + 
             (f" in {location}" if location else ""), 
             loading_history, 
             jobs
@@ -1024,7 +1030,7 @@ def build_ui():
         
         with gr.Tabs() as tabs:
             # Skill Mapping Tab
-            with gr.Tab("✨ Skill Mapping") as skill_tab:
+            with gr.Tab("✨ 1. Skill Mapping") as skill_tab:
                 gr.Markdown("Step 1: Discover your strengths and transferable skills")
                 with gr.Row():
                     with gr.Column(scale=2):
@@ -1038,10 +1044,11 @@ def build_ui():
                             skill_msg = gr.Textbox(
                                 placeholder="Tell me about your experiences and interests...",
                                 show_label=False,
-                                scale=9
+                                scale=7
                             )
-                            skill_clear = gr.Button("Clear", scale=1)
-                        
+                            skill_enter_btn = gr.Button("Enter", scale=1)
+                            skill_clear = gr.Button("Clear Chat", scale=2)
+                            
                             review_skills_btn = gr.Button("Review My Skills", visible=False)
                     
                     # Skill visualization area (initially hidden)
@@ -1070,15 +1077,23 @@ def build_ui():
                         gr.Markdown("### Suggested Job Titles") 
                         job_suggestion_text = gr.Markdown("", visible=False)
                         job_suggestions = gr.CheckboxGroup(
-                            label="Select job titles you're interested in",
+                            label="Select a job title you're interested in",
                             choices=[],
                             visible=False
                         )
-                        proceed_to_jobs_btn = gr.Button("Explore These Jobs")
+                        proceed_to_jobs_btn = gr.Button("Explore This Job")
                 
                 # Event handlers for Skill Mapping tab
                 result = skill_msg.submit(skill_mapping_chat, [skill_msg, skill_chat], [skill_chat, review_skills_btn]).then(
                     lambda: "", None, skill_msg)
+                
+                skill_enter_btn.click(
+                    skill_mapping_chat, 
+                    [skill_msg, skill_chat], 
+                    [skill_chat, review_skills_btn]
+                ).then(
+                    lambda: "", None, skill_msg
+                )
                 
                 skill_clear.click(lambda: WELCOME_MESSAGES["skill_mapping"], None, skill_chat)
                                 
@@ -1130,19 +1145,34 @@ def build_ui():
                 )
             
             # Job Matching Tab
-            with gr.Tab("💼 Job Matching") as job_tab:
+            with gr.Tab("💼 2. Job Matching") as job_tab:
                 gr.Markdown("Step 2: Find job opportunities that match your skills and goals")
                 
                 # Add API status indicator
                 api_status = gr.Markdown(check_api_status())
                 
                 with gr.Row():
-                    visible_job_query = gr.Textbox(
-                        placeholder="Job title, skills, or keywords",
-                        label="Search"
-                    )
-                    job_location = gr.Textbox(placeholder="City, state, or 'remote'", label="Location (optional)")
-                    job_search_btn = gr.Button("Search Jobs")
+                    with gr.Column(scale=3):
+                        visible_job_query = gr.Textbox(
+                            placeholder="Job title, skills, or keywords",
+                            label="Search"
+                        )
+                    with gr.Column(scale=3):
+                        job_location = gr.Textbox(
+                            placeholder="City, state, or 'remote'", 
+                            label="Location (optional)"
+                        )
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        job_industry = gr.Dropdown(
+                            choices=["Any Industry", "Healthcare", "Technology", "Retail", 
+                                     "Manufacturing", "Education", "Finance", "Hospitality", 
+                                     "Construction", "Transportation", "Administrative"],
+                            value="Any Industry",
+                            label="Industry (optional)"
+                        )
+                    with gr.Column(scale=3, min_width=100):
+                        job_search_btn = gr.Button("Search Jobs", size="lg")
                 
                 # Sync the job query between tabs
                 job_query.change(lambda x: x, job_query, visible_job_query)
@@ -1211,7 +1241,7 @@ def build_ui():
                 
                 job_search_btn.click(
                     job_search, 
-                    [visible_job_query, job_location, job_chat], 
+                    [visible_job_query, job_location, job_industry, job_chat], 
                     [job_chat, job_data_state]
                 ).then(
                     # Clear the results first
@@ -1219,7 +1249,7 @@ def build_ui():
                     None,
                     [job_results]
                 ).then(
-                    # Just transform the job data for display table
+                    # Transform the job data for display table
                     lambda jobs: format_jobs_for_display(jobs),
                     inputs=job_data_state,
                     outputs=job_results
@@ -1269,7 +1299,7 @@ def build_ui():
                 
             
             # Goal Setting Tab
-            with gr.Tab("🎯 Goal Setting") as goal_tab:
+            with gr.Tab("🎯 3. Goal Setting") as goal_tab:
                 gr.Markdown("Step 3: Set achievable career goals and build confidence")
                 with gr.Row():
                     with gr.Column(scale=2):
