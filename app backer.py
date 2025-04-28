@@ -138,7 +138,7 @@ def search_jobs(query, location, limit=10, include_description=False):
         
         # Process only up to the limit
         for job in job_items[:limit]:
-            # The structure might vary, so adapt field paths accordingly
+            # The structure might vary, so adapt field paths ingly
             if "job_data" in job:
                 job_data = job.get("job_data", {})
                 title = job_data.get("job_title", "Untitled Position")
@@ -1463,15 +1463,104 @@ def build_ui():
         # About section
         with gr.Accordion("About Career Compass", open=False):
             gr.Markdown("""
-            ## Career Compass
-            
-            Career Compass helps you navigate your career journey through:
-            
-            * **Skill Mapping** - Discover your strengths and transferable skills
-            * **Goal Setting** - Build confidence and create achievable career goals
-            * **Job Matching** - Find opportunities that fit your unique abilities
-            
-            This tool is designed to be supportive and practical, meeting you where you are in your career journey.
+            # Career Compass User Guide
+
+Career Compass is an AI-powered career development assistant designed to help you discover your strengths, set achievable career goals, and find job opportunities that match your unique abilities. This guide will walk you through each feature of the application.
+
+## Getting Started
+
+Career Compass follows a three-step process to help you navigate your career journey:
+
+1. **Skill Mapping** - Discover your transferable skills and strengths
+2. **Job Matching** - Find job opportunities that match your skills and interests
+3. **Goal Setting** - Create achievable career development plans
+
+## Step 1: Skill Mapping
+
+The Skill Mapping tab helps you identify your existing skills, including those from informal experiences and transferable abilities.
+
+### How to Use Skill Mapping:
+
+1. **Start a conversation** - Share information about:
+   - Work you've done (paid or unpaid)
+   - Projects you've completed
+   - Problems you've solved
+   - Skills you've taught yourself
+
+2. **Review your skills** - After chatting, click the "Review My Skills" button when it appears to see your identified skills.
+
+3. **Select skills to explore** - Choose up to 3 skills you'd like to focus on, then click "Find Jobs Based on Selected Skills".
+
+4. **Explore job suggestions** - Review the suggested job titles that match your selected skills, then click "Explore This Job" to continue to the Job Matching tab.
+
+### Skill Analysis Quick Prompts:
+
+Use these buttons for quick skill insights:
+- **Check Market Demand** - Discover how in-demand your skills are
+- **How To Improve My Skills** - Get suggestions for skill development
+- **Find Remote Work With My Skills** - Explore remote job opportunities
+
+## Step 2: Job Matching
+
+The Job Matching tab helps you find job opportunities that match your skills and interests.
+
+### How to Use Job Matching:
+
+1. **Search for jobs** - Enter:
+   - Job title, skills, or keywords
+   - Location (optional)
+   - Industry (optional)
+   - Click "Search Jobs"
+
+2. **Review job results** - Browse the search results displayed in the table.
+
+3. **Save interesting jobs** - Enter the job number from the table and click "Save Selected Job" to add it to your saved jobs list.
+
+4. **Get job advice** - Use the chat to ask questions about specific careers or get job search advice.
+
+*Note: If the API connection fails, sample job data will be used instead.*
+
+## Step 3: Goal Setting
+
+The Goal Setting tab helps you create achievable career goals and build confidence.
+
+### How to Use Goal Setting:
+
+1. **Discuss your career aspirations** - Share your:
+   - Career interests
+   - Important job factors (schedule, pay, location)
+   - Obstacles you've faced
+   - Initial steps you could take
+
+2. **Use quick goal prompts** - Click any of these buttons for structured guidance:
+   - **Create Achievable Skill-Building Goals**
+   - **Develop Step-by-Step Career Plan**
+   - **How To Advance In Current Role**
+   - **Overcome Career Barriers**
+
+3. **Save your goals** - Use the form to save specific goals:
+   - Enter your goal in the text box
+   - Optionally link it to a specific job role
+   - Click "Save This Goal"
+
+4. **Track goal progress** - Manage your saved goals:
+   - View all saved goals in the table
+   - Toggle a goal's completion status by entering its ID and clicking "Toggle Completion Status"
+   - Goals are marked as ✅ Complete or ❌ Incomplete
+
+## Tips for Getting the Most from Career Compass
+
+1. **Be specific about your experiences** - Include details about your responsibilities, achievements, and challenges.
+
+2. **Share your constraints** - Mention any limitations like schedule restrictions, education barriers, or location requirements.
+
+3. **Ask follow-up questions** - The AI can provide more personalized guidance when you engage in conversation.
+
+4. **Save your progress** - Save jobs and goals to track your career journey over time.
+
+5. **Move between tabs** - You can return to previous tabs to refine your skills or job search at any time.
+
+Career Compass is designed to be supportive and practical, meeting you where you are in your career journey. Remember that this tool is here to guide you, but the ultimate career decisions remain yours to make.
             """)
         
         # Add a tab change event handler
